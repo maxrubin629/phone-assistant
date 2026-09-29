@@ -232,7 +232,9 @@ struct CallNotchSurface: View {
                 Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
             } else {
             HStack(spacing: 0) {
-                compactLeading.frame(maxWidth: .infinity)
+                // Each ear keeps its half even when empty; an empty view takes no
+                // space and would push the other ear's glyph under the housing.
+                ZStack { Color.clear; compactLeading }.frame(maxWidth: .infinity)
                 // No text or controls can sit behind the camera housing.
                 if chrome.attached {
                     Color.clear.frame(width: chrome.notchWidth)
@@ -241,7 +243,7 @@ struct CallNotchSurface: View {
                         .font(.system(size: 12, weight: .semibold)).lineLimit(1)
                         .foregroundStyle(.white.opacity(0.92)).layoutPriority(1)
                 }
-                compactTrailing.frame(maxWidth: .infinity)
+                ZStack { Color.clear; compactTrailing }.frame(maxWidth: .infinity)
             }
             .padding(.horizontal, chrome.attached ? 6 : 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

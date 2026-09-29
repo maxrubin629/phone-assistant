@@ -52,13 +52,16 @@ import CallAudio
                         routing: chrome,
                         openHistory: {
                             history.requestedSelection = history.liveID ?? history.mostRecent?.id
-                            openWindow(id: "phone-kit"); NSApp.activate(ignoringOtherApps: true)
+                            AppWindows.present { openWindow(id: "phone-kit") }
                         },
-                        openSettings: { openSettings(); NSApp.activate(ignoringOtherApps: true) })
+                        openSettings: { AppWindows.present { openSettings() } })
+                    delegate.reopen = { AppWindows.present { openWindow(id: "phone-kit") } }
+                    AppWindows.observe()
                     delegate.notch?.show()
                     if assistant.preferences.setupCompleted {
                         DispatchQueue.main.async {
                             NSApp.windows.filter { ["Phone Assistant", "Calls"].contains($0.title) }.forEach { $0.orderOut(nil) }
+                            AppWindows.refresh()
                         }
                     }
                     delegate.requestStop = {

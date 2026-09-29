@@ -59,8 +59,8 @@ final class LiveDelegationTests: XCTestCase {
         let enabled = try responses(true)
         XCTAssertEqual(enabled["parallel_tool_calls"] as? Bool, false)
         let tools = try XCTUnwrap(enabled["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["ask_codex", "report_call_result"])
-        for (tool, field) in zip(tools, ["question", "summary"]) {
+        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["ask_codex", "report_call_result", "end_call"])
+        for (tool, field) in zip(tools, ["question", "summary", "reason"]) {
             XCTAssertEqual(tool["type"] as? String, "function")
             XCTAssertEqual(tool["strict"] as? Bool, true)
             XCTAssertNil(tool["function"])
@@ -157,6 +157,8 @@ final class LiveDelegationTests: XCTestCase {
     func testArgumentValidationDoesNotAcceptDestinationsOrBroadTools() throws {
         XCTAssertEqual(try LiveProtocol.checkedToolArguments(call()), call().arguments)
         XCTAssertNoThrow(try LiveProtocol.checkedToolArguments(call(name: "report_call_result", arguments: "{\"summary\":\"Appointment confirmed\"}")))
+        XCTAssertNoThrow(try LiveProtocol.checkedToolArguments(call(name: "end_call", arguments: "{\"reason\":\"Appointment booked; said goodbye\"}")))
+        XCTAssertThrowsError(try LiveProtocol.checkedToolArguments(call(name: "end_call", arguments: "{\"reason\":\"" + String(repeating: "x", count: 501) + "\"}")))
         for invalid in [call(name: "shell"), call(arguments: "{\"question\":\"x\",\"thread_id\":\"other\"}"),
                         call(arguments: "{\"question\":\"  \"}"), call(arguments: "{\"question\":true}"),
                         call(arguments: "{\"question\":\"" + String(repeating: "x", count: 4001) + "\"}")] {

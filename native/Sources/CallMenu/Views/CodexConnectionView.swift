@@ -74,12 +74,22 @@ struct CodexConnectionSection: View {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
+    /// The name Codex lists the tools under. Earlier builds used `codex_phone`,
+    /// which registering removes so Codex doesn't load the tools twice.
+    static let serverName = "phone_assistant"
+    private static let legacyServerName = "codex_phone"
+
     private static func register(cli: URL, server: URL) async -> Bool {
+        _ = await run(cli: cli, arguments: ["mcp", "remove", legacyServerName])
+        return await run(cli: cli, arguments: ["mcp", "add", serverName, "--", server.path])
+    }
+
+    private static func run(cli: URL, arguments: [String]) async -> Bool {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = cli
-                process.arguments = ["mcp", "add", "codex_phone", "--", server.path]
+                process.arguments = arguments
                 // Keep credentials out of the child environment and discard CLI output.
                 let inherited = ProcessInfo.processInfo.environment
                 process.environment = inherited.filter { ["HOME", "PATH", "TMPDIR", "CODEX_HOME", "USER", "LOGNAME"].contains($0.key) }

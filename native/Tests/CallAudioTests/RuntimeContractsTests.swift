@@ -10,8 +10,11 @@ final class RuntimeContractsTests: XCTestCase {
         XCTAssertThrowsError(try CallAudioAttribution.select(processes: [chrome], phoneRunning: true, faceTimeRunning: false))
         XCTAssertThrowsError(try CallAudioAttribution.select(processes: [renderer], phoneRunning: false, faceTimeRunning: false))
         XCTAssertThrowsError(try CallAudioAttribution.select(processes: [renderer], phoneRunning: true, faceTimeRunning: true))
-        let second = CallAudioProcess(id: 45, bundleID: "com.apple.mobilephone", runningOutput: true)
-        XCTAssertThrowsError(try CallAudioAttribution.select(processes: [renderer, second], phoneRunning: true, faceTimeRunning: false))
+        // Phone's own tones overlap the call's start; the call audio is avconferenced's.
+        let phoneTones = CallAudioProcess(id: 45, bundleID: "com.apple.mobilephone", runningOutput: true)
+        XCTAssertEqual(try CallAudioAttribution.select(processes: [renderer, phoneTones], phoneRunning: true, faceTimeRunning: false), 42)
+        let secondConference = CallAudioProcess(id: 46, bundleID: "com.apple.avconferenced", runningOutput: true)
+        XCTAssertThrowsError(try CallAudioAttribution.select(processes: [renderer, secondConference, phoneTones], phoneRunning: true, faceTimeRunning: false))
     }
     func testModesHaveIndependentAuthorizedRoutes() {
         XCTAssertEqual(CallAudioMode.agent.routes.rawValue, 54)

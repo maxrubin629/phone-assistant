@@ -105,6 +105,10 @@ public final class CallAudioRuntime: @unchecked Sendable {
         }
     }
     public var lifecycleRevision: UInt64 { cab_controls_revision(controls) }
+    /// Seconds of assistant speech still queued for the caller.
+    public var queuedAgentSeconds: Double {
+        sync { rings.count == 9 ? Double(cab_ring_queued_frames(rings[3].pointer)) / 48000 : 0 }
+    }
     public func start(configuration: CallAudioConfiguration, epoch: String,
                       expectedLifecycleRevision: UInt64? = nil) throws {
         let revision = expectedLifecycleRevision ?? cab_controls_revision(controls)
@@ -166,6 +170,7 @@ public final class CallAudioRuntime: @unchecked Sendable {
                 guard captureStarted else { throw CallAudioError("Phone capture produced no buffers. Check system audio capture permission.") }
                 guard cab_controls_revision(controls) == revision else { throw CallAudioError("Audio startup was cancelled.") }
                 lastCaptureFrames = 0; lastCaptureTime = ProcessInfo.processInfo.systemUptime
+                callInputStoppedAt = nil
                 lastWorkerTick = lastCaptureTime
                 let timer = DispatchSource.makeTimerSource(queue: worker)
                 timer.schedule(deadline: .now(), repeating: .milliseconds(20), leeway: .milliseconds(2))
@@ -378,23 +383,34 @@ public final class CallAudioRuntime: @unchecked Sendable {
             }
             if let microphoneToModel { try writeRequired(microphoneToModel.convert(microphone), to: rings[8]) }
             if let microphoneToPhone { try writeRequired(microphoneToPhone.convert(microphone), to: rings[2]) }
-            let remote = rings[7].read(480, generation: generation)
-            let local = rings[8].read(480, generation: generation)
+            // The timer can fire late (22 ms instead of 20 ms is common), so a
+            // fixed 20 ms per tick falls behind the capture clock until the
+            // backlog check stops the call. Drain every whole frame the caller
+            // capture has produced instead, paced by that capture's clock.
+            let chunks = max(1, min(8, cab_ring_queued_frames(rings[7].pointer) / 480))
             let routes = CallAudioRoutes(rawValue: cab_controls_routes(controls))
-            if let transcriptionHandler, !epoch.isEmpty {
-                transcriptionHandler(routes.contains(.callerToAgent) ? remote : nil,
-                                     routes.contains(.microphoneToAgent) ? local : nil)
-            }
-            if !epoch.isEmpty, configuration.phoneRouting?.needsVoice == true || !routes.intersection([.callerToAgent, .microphoneToAgent]).isEmpty {
-                // The voice protocol needs a clock even in output-only mode.
-                // With no authorized inputs, the mixer emits only zero PCM.
-                ModelFrameMixer.render(caller: remote, microphone: local, frames: 480, routes: routes,
-                    callerGain: Float(liveTuning?[.callerToAgent] ?? Double(callerGain)),
-                    microphoneGain: Float(liveTuning?[.microphoneToAgent] ?? Double(microphoneGain))) { pcm in
-                    modelHandler?(CallAudioPacket(pcm16: pcm, epoch: epoch, startSample: samplePosition))
+            for _ in 0..<chunks {
+                let remote = rings[7].read(480, generation: generation)
+                let local = rings[8].read(480, generation: generation)
+                if let transcriptionHandler, !epoch.isEmpty {
+                    transcriptionHandler(routes.contains(.callerToAgent) ? remote : nil,
+                                         routes.contains(.microphoneToAgent) ? local : nil)
                 }
+                if !epoch.isEmpty, configuration.phoneRouting?.needsVoice == true || !routes.intersection([.callerToAgent, .microphoneToAgent]).isEmpty {
+                    // The voice protocol needs a clock even in output-only mode.
+                    // With no authorized inputs, the mixer emits only zero PCM.
+                    ModelFrameMixer.render(caller: remote, microphone: local, frames: 480, routes: routes,
+                        callerGain: Float(liveTuning?[.callerToAgent] ?? Double(callerGain)),
+                        microphoneGain: Float(liveTuning?[.microphoneToAgent] ?? Double(microphoneGain))) { pcm in
+                        modelHandler?(CallAudioPacket(pcm16: pcm, epoch: epoch, startSample: samplePosition))
+                    }
+                }
+                samplePosition &+= 480
             }
-            samplePosition &+= 480
+            // The microphone runs on its own clock. Drop any excess beyond
+            // 100 ms so slow drift against the caller clock can't accumulate.
+            let microphoneExcess = cab_ring_queued_frames(rings[8].pointer)
+            if microphoneExcess > 2400 { _ = rings[8].read(microphoneExcess - 960, generation: generation) }
             if tickNumber % 10 == 0 {
                 let counters = rings.map { cab_ring_counters($0.pointer) }
                 let phone = phoneIO?.takePhoneOutputMetrics() ?? CABPhoneOutputSnapshot()
@@ -413,6 +429,9 @@ public final class CallAudioRuntime: @unchecked Sendable {
                 callerMeterWindow.reset(); microphoneMeterWindow.reset(); latestAgentPeak = 0
                 try verifyRoutes()
             }
+        } catch is CallEnded {
+            do { try stopOwnedResources(); statusHandler?(.callEnded) }
+            catch { statusHandler?(.failed("The call ended. Cleanup: " + error.localizedDescription)) }
         } catch {
             let original = error.localizedDescription
             do { try stopOwnedResources(); statusHandler?(.failed(original)) }
@@ -464,8 +483,26 @@ public final class CallAudioRuntime: @unchecked Sendable {
         if message != lastDeviceStatus { lastDeviceStatus = message; deviceStatusHandler?(message) }
         completed = true
     }
+    private struct CallEnded: Error {}
+    private var callInputStoppedAt: TimeInterval?
     private func verifyRoutes() throws {
         guard let configuration, let phoneIO, let callerIO, let tap else { throw CallAudioError("Audio route ownership was lost.") }
+        // Hanging up stops the call-audio process's output. That is the call
+        // ending normally, not a routing failure.
+        guard (try? CallHardware.value(tap.process, kAudioProcessPropertyIsRunningOutput, initial: UInt32(0))) == 1 else {
+            throw CallEnded()
+        }
+        // The call's microphone stops a moment before its output when the call
+        // ends. Allow two seconds for the output to follow before treating a
+        // stopped microphone as a routing failure.
+        if (try? CallHardware.value(tap.process, kAudioProcessPropertyIsRunningInput, initial: UInt32(0))) == 1 {
+            callInputStoppedAt = nil
+        } else {
+            let now = ProcessInfo.processInfo.systemUptime
+            let stoppedAt = callInputStoppedAt ?? now
+            callInputStoppedAt = stoppedAt
+            if now - stoppedAt < 2 { return }
+        }
         guard try CallHardware.sendDevice(configuration.virtualOutputUID) == phoneIO.device else {
             throw CallAudioError("The Phone Assistant device reconnected. Connect Phone audio again.")
         }

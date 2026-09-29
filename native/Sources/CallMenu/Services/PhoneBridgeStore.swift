@@ -19,7 +19,10 @@ import Combine
     @Published private(set) var muted = false
     @Published private(set) var callerPeak: Float = 0
     @Published private(set) var microphonePeak: Float = 0
-    @Published var tuning = CallAudioTuning()
+    /// The Mac's built-in microphone arrives far quieter than a phone expects
+    /// (speech peaks near 0.03), so the microphone starts about 8 dB louder.
+    /// The peak limiter keeps loud speech from clipping.
+    @Published var tuning = CallAudioTuning(microphoneGain: 2.5)
     var microphoneGain: Double { tuning[.microphoneToCaller] }
     @Published var selectedMicrophoneUID = ""
     @Published var selectedMonitorUID = ""
@@ -70,15 +73,13 @@ import Combine
     var diagnosticReport: PhoneTestReport?
     private var lastReportWrite = Date.distantPast
     private let reportQueue = DispatchQueue(label: "com.codexcall.phone-bridge-report", qos: .utility)
-    private let microphoneGainKey = "phoneBridgeMicrophoneGain"
 
     init(loadsSavedKey: Bool = true) {
         // An OPENAI_API_KEY from the environment is used as-is and never saved.
         if !apiKey.isEmpty { keySaved = false }
         else if loadsSavedKey, let saved = APIKeyStore.load() { apiKey = saved }
-        if let saved = UserDefaults.standard.object(forKey: microphoneGainKey) as? Double, saved.isFinite {
-            tuning = .init(microphoneGain: min(4, max(0, saved)))
-        }
+        // Earlier builds saved a microphone level here that nothing updates anymore.
+        UserDefaults.standard.removeObject(forKey: "phoneBridgeMicrophoneGain")
         sender.onFailure = { [weak self] epoch, message in
             Task { @MainActor in
                 guard let self, self.epoch == epoch else { return }
@@ -93,6 +94,7 @@ import Combine
         let run = UUID(); runID = run
         busy = true; error = ""; muted = false; liveMeters = .init()
         epoch = UUID().uuidString; sequence = 0; transcript = ""; lastTranscriptWasAssistant = nil
+        hangingUp = false
         status = "Checking Phone's microphone and connecting audio…"
         diagnosticReport = PhoneTestReport(nativePlayback: nativeCallerPlayback && routing.listener.includesUser,
             microphoneEnabled: routing.speaker.includesUser, microphoneGain: microphoneGain, callerGain: 1,
@@ -117,8 +119,12 @@ import Combine
             let sender = self.sender
             try await control { [weak self] engine in
                 engine.onStatus = { state in
-                    if case .failed(let message) = state {
-                        Task { @MainActor in guard let self, self.runID == run else { return }; self.fail(message) }
+                    switch state {
+                    case .failed(let message):
+                        Task { @MainActor in guard let self, self.runID == run else { return }; self.fail(message, audioReason: true) }
+                    case .callEnded:
+                        Task { @MainActor in guard let self, self.runID == run else { return }; self.callEnded() }
+                    default: break
                     }
                 }
                 engine.onDeviceStatus = { message in
@@ -218,7 +224,7 @@ import Combine
         let instructions = profile.sessionInstructions + "\n" + modeInstructions
             + "\nYou are on an actual telephone call. Follow this task: " + String(task.prefix(16000))
             + "\nNever claim to control audio routes or to have completed an external action without confirmation."
-            + (onDelegateTool == nil ? "" : "\nWhen facts or decisions are missing, use your text delegate's ask_codex tool to consult the originating Codex task. Wait for its scoped answer. Use report_call_result to return a factual summary when the task is complete. Neither tool dials or hangs up Phone.")
+            + (onDelegateTool == nil ? "" : "\nWhen facts or decisions are missing, use your text delegate's ask_codex tool to consult the originating Codex task. Wait for its scoped answer. Use report_call_result to return a factual summary when the task is complete. When the conversation is over, say goodbye, then use end_call to hang up.")
             + (routing.listener.includesAgent ? " Wait for caller speech before beginning." : " You cannot hear the call in this mode. Use the task to decide what to say; do not invent replies from the caller.")
         try await session.connect(key: apiKey, instructions: instructions, context: transcript)
         guard operation == version, voice === session else { await session.close(); return }
@@ -231,8 +237,11 @@ import Combine
         voiceStatus = routing.speaker.includesAgent ? "Assistant connected" : "Assistant listening silently"
         try await session.instruct(modeInstructions)
     }
+    /// Set once the assistant hangs up: anything it says afterward is dropped,
+    /// so only the goodbye already playing reaches the caller.
+    private var hangingUp = false
     private func generated(_ pcm: Data, version: UInt64, epoch packetEpoch: String) async throws {
-        guard operation == version, active, epoch == packetEpoch else { return }
+        guard operation == version, active, epoch == packetEpoch, !hangingUp else { return }
         // Agent speech is discarded in user-only sending, never queued to resume.
         guard routing.speaker.includesAgent else { return }
         let next = sequence; sequence &+= 1
@@ -240,7 +249,7 @@ import Combine
     }
     private func remember(_ text: String, isAssistant: Bool, version: UInt64) {
         guard operation == version, active else { return }
-        if isAssistant && !routing.speaker.includesAgent { return }
+        if isAssistant && (!routing.speaker.includesAgent || hangingUp) { return }
         if lastTranscriptWasAssistant != isAssistant {
             transcript += isAssistant ? "\nAssistant: " : "\nHeard on the call: "
             lastTranscriptWasAssistant = isAssistant
@@ -270,6 +279,19 @@ import Combine
         guard canStop else { return }
         diagnosticReport?.event(value ? "muted" : "unmuted")
         saveDiagnosticReport(force: true)
+    }
+    /// Hangs up in Phone once the assistant's last words have played: no new
+    /// speech for a moment and nothing left queued for the caller, within 10 s.
+    func hangUpAfterSpeech() async throws {
+        guard active else { throw LiveVoiceError("The call's audio isn't connected.") }
+        hangingUp = true
+        // Let the goodbye already queued for the caller finish, up to 8 seconds.
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline, runtime.queuedAgentSeconds > 0.05 {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        do { try PhoneCallControls.endCall() }
+        catch { hangingUp = false; throw error }
     }
     func deliverCodexAnswer(_ text: String) async throws {
         guard active, !busy, let voice else { throw LiveVoiceError("The voice session is not ready. The answer has not been delivered.") }
@@ -335,10 +357,17 @@ import Combine
         await withCheckedContinuation { continuation in reportQueue.async { continuation.resume() } }
         return result
     }
-    private func fail(_ message: String) {
+    /// Hanging up in Phone is a normal end: disconnect without an error.
+    private func callEnded() {
+        diagnosticReport?.event("callEnded")
+        stop()
+    }
+    /// `audioReason` marks the audio runtime's own fixed messages, which are
+    /// saved as the failure detail so a stopped call can be diagnosed.
+    private func fail(_ message: String, audioReason: Bool = false) {
         // Provider errors may contain arbitrary remote text. Persist a fixed
         // lifecycle label, never model text, prompts, transcripts, or credentials.
-        diagnosticReport?.event("failed", detail: "The Phone bridge reported a connection error.")
+        diagnosticReport?.event("failed", detail: audioReason ? message : "The Phone bridge reported a connection error.")
         stop(); error = LiveVoiceError(message).message
     }
     private func recordRouting() {

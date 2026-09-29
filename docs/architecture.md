@@ -25,7 +25,7 @@ flowchart LR
 
 The participation mode enables each connection in this graph. Caller audio is never a source for the outgoing mix. Assistant speech is decoded directly into the native queues rather than played through an ordinary output and captured again.
 
-The capture selector requires one active Phone renderer. It refuses ambiguous attribution, simultaneous FaceTime use, and any fallback to whole-system capture. The private aggregate contains the tap without a physical input that could accidentally become caller audio.
+The capture selector taps the call's audio process: `avconferenced` for a Continuity call, even while Phone plays its own tones at the call's start and end. It refuses ambiguous attribution, simultaneous FaceTime use, and any fallback to whole-system capture. The private aggregate contains the tap without a physical input that could accidentally become caller audio.
 
 For managed listening, the tap mutes the original renderer while it's consumed, so the app's physical listening output is the only caller playback path. Stopping capture restores Phone's ordinary playback. Physical listening and microphone endpoints can follow macOS defaults or use a fixed device; see [automatic devices](automatic-devices.md).
 

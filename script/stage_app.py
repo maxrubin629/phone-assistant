@@ -1,5 +1,5 @@
 from pathlib import Path
-import plistlib,shutil,subprocess,os
+import plistlib,shutil,subprocess,os,tempfile
 from build_phone_kit import build as build_phone_kit
 from phone_kit_signing import HELPER_ID, HELPER_REQUIREMENT, CLIENT_REQUIREMENT, RELEASE, BUILD_VERSION, sign
 from verify_phone_kit import verify as verify_phone_kit
@@ -30,7 +30,19 @@ if payload.is_symlink(): raise SystemExit('Refusing symlink bundle staging desti
 if payload.exists(): shutil.rmtree(payload)
 shutil.copytree(root/'dist/drivers/CodexCallSend.driver',payload)
 shutil.copy2(root/'dist/drivers/build-manifest.json',kit/'build-manifest.json')
-data={'CFBundleExecutable':'CallMenu','CFBundleIdentifier':'com.codexcall.menu','CFBundleName':'Phone Assistant','CFBundleDisplayName':'Phone Assistant','CFBundlePackageType':'APPL','CFBundleVersion':BUILD_VERSION,'CFBundleShortVersionString':'0.3.0','LSMinimumSystemVersion':'14.2','LSUIElement':True,'NSMicrophoneUsageDescription':'Route the microphone you select to the caller or your selected listening output.','NSAudioCaptureUsageDescription':'Capture only the application you select and route its audio to the caller or your listening output.'}
+def compile_icon(resources):
+    # actool renders the Icon Composer bundle into Assets.car for macOS 26's
+    # Liquid Glass icons, and AppIcon.icns for earlier releases.
+    with tempfile.TemporaryDirectory() as work:
+        catalog=Path(work)/'Empty.xcassets'; catalog.mkdir()
+        (catalog/'Contents.json').write_text('{"info":{"author":"xcode","version":1}}')
+        output=Path(work)/'out'; output.mkdir()
+        subprocess.run(['xcrun','actool',str(catalog),str(root/'native/Resources/AppIcon.icon'),'--compile',str(output),
+            '--app-icon','AppIcon','--target-device','mac','--platform','macosx','--minimum-deployment-target','14.2',
+            '--output-partial-info-plist',str(Path(work)/'icon.plist')],check=True,stdout=subprocess.DEVNULL)
+        for name in ('Assets.car','AppIcon.icns'): replace(output/name,resources/name)
+compile_icon(content/'Resources')
+data={'CFBundleExecutable':'CallMenu','CFBundleIdentifier':'com.codexcall.menu','CFBundleName':'Phone Assistant','CFBundleDisplayName':'Phone Assistant','CFBundlePackageType':'APPL','CFBundleVersion':BUILD_VERSION,'CFBundleShortVersionString':'0.3.0','LSMinimumSystemVersion':'14.2','CFBundleIconName':'AppIcon','CFBundleIconFile':'AppIcon','LSUIElement':True,'NSMicrophoneUsageDescription':'Route the microphone you select to the caller or your selected listening output.','NSAudioCaptureUsageDescription':'Capture only the application you select and route its audio to the caller or your listening output.'}
 data.update({'SMPrivilegedExecutables': {HELPER_ID: HELPER_REQUIREMENT},
              'PhoneKitHelperRequirement': HELPER_REQUIREMENT,
              'PhoneKitClientRequirement': CLIENT_REQUIREMENT})

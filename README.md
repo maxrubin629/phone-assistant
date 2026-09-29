@@ -10,7 +10,7 @@ Ask Codex to make a call, and an AI voice assistant handles it through your Mac'
 ## How it works
 
 1. **Codex prepares the call.** With the bundled MCP tools, Codex describes the task ("book a cleaning next week, check with me before confirming") and gets back a session. Codex stays in charge of the task; the call is one tool it uses.
-2. **You start the call in Phone.** Dialing stays manual. When the call starts, Phone Assistant connects its audio and selects itself as Phone's microphone.
+2. **Codex places the call.** It dials from your iPhone's number through Phone on your Mac (macOS may ask you to confirm), or you start the call yourself. When the call starts, Phone Assistant connects its audio and selects itself as Phone's microphone.
 3. **The assistant talks.** A realtime voice model speaks with the caller. When it needs a fact or a decision, it asks the originating Codex task and waits for the answer.
 4. **You stay in control.** The notch widget offers Listen, Join, Take over, and mute. The assistant is told who is on the call in each mode, and holds back when you're speaking.
 5. **The result goes back to Codex.** The assistant reports the outcome, attributing each agreement to the right person. If the summary isn't enough, Codex can read the transcript with `call_transcript`.
@@ -68,7 +68,7 @@ See the [documentation index](docs/README.md) for the architecture, the Codex to
 
 ## Status
 
-This is a working prototype. Dialing and hanging up stay manual. It has automated coverage for audio routing, the voice session, the MCP tools, history, and transcription, but real calls with a remote listener are still being qualified, including echo without headphones, device changes, and long calls. It isn't yet notarized for distribution.
+This is a working prototype. Hanging up stays manual. It has automated coverage for audio routing, the voice session, the MCP tools, history, and transcription, but real calls with a remote listener are still being qualified, including echo without headphones, device changes, and long calls. It isn't yet notarized for distribution.
 
 ## License
 

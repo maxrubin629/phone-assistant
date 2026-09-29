@@ -1,0 +1,53 @@
+{
+  "fill": {
+    "solid": "display-p3:0.03000,0.02000,0.05000,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "waves.svg",
+          "name": "waves",
+          "glass": true
+        },
+        {
+          "image-name": "handset.svg",
+          "name": "handset",
+          "glass": true
+        }
+      ],
+      "name": "call",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.35
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "backdrop.svg",
+          "name": "backdrop",
+          "glass": false
+        }
+      ],
+      "name": "backdrop",
+      "shadow": {
+        "kind": "none",
+        "opacity": 0.5
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

@@ -114,6 +114,7 @@ import Foundation
                     }
                     if session.phase == "prepared" { watchForCall(session.sessionID) }
                 }
+                if arguments["dial"] as? Bool == true { return try placeCall(try registry.get(session.sessionID)) }
                 return state(session)
             case "call_get":
                 if registry.current == nil, arguments["session_id"] == nil {
@@ -123,6 +124,8 @@ import Foundation
                 return state(try registry.get(arguments["session_id"] as? String))
             case "call_transcript":
                 return try transcript(arguments)
+            case "call_dial":
+                return try placeCall(try current(arguments))
             case "call_connect":
                 let session = try current(arguments)
                 if session.phase == "connecting" || session.phase == "connected" || session.phase == "needs_input" { return state(session) }
@@ -169,6 +172,27 @@ import Foundation
             default: throw PhoneSessionError("Unknown Phone Assistant tool.")
             }
         } catch { return ["error": error.localizedDescription] }
+    }
+    /// Places a prepared call through Phone, which dials from the user's iPhone.
+    private func placeCall(_ session: PhoneSession) throws -> [String: Any] {
+        guard let bridge, let kit else { throw PhoneSessionError("Phone Assistant is not ready.") }
+        guard session.phase == "prepared" else { throw PhoneSessionError("This call has already started. Use call_get to follow it.") }
+        guard let number = session.phoneNumber else { throw PhoneSessionError("Prepare the call with phone_number to dial it.") }
+        guard !bridge.canStop, !otherAudio, kit.ready else {
+            throw PhoneSessionError("Finish audio setup or disconnect the existing audio session before dialing.")
+        }
+        guard bridge.keyAvailable else { throw PhoneSessionError("Add the voice API key in Phone Assistant settings, then dial again.") }
+        // Only digits and a leading plus reach the tel: link.
+        let digits = (number.hasPrefix("+") ? "+" : "") + number.filter(\.isNumber)
+        guard let url = URL(string: "tel:" + digits), NSWorkspace.shared.open(url) else {
+            throw PhoneSessionError("Phone could not start the call.")
+        }
+        var value = state(session)
+        value["dialed"] = true
+        value["next_step"] = Self.autoConnectEnabled
+            ? "Phone is placing the call from the user's iPhone; macOS may ask the user to confirm. Audio connects automatically when the call starts. Questions and the result arrive in this task as call_agent_question and call_agent_result; wait for them rather than polling."
+            : "Phone is placing the call; macOS may ask the user to confirm. Once it starts, call_connect."
+        return value
     }
     /// The single path from a prepared session to live audio, for call_connect and auto-connect.
     private func connectAudio(_ id: String) throws {
@@ -226,7 +250,9 @@ import Foundation
         value["auto_connect"] = Self.autoConnectEnabled
         value["next_step"] = session.phase == "prepared"
             ? (Self.autoConnectEnabled
-                ? "Ask the user to start the call in Phone. The app connects automatically when that call starts; use call_get to follow it. call_connect also works if the call is already in progress. This tool has not dialed or changed audio."
+                ? (session.phoneNumber == nil
+                    ? "Ask the user to start the call in Phone. The app connects automatically when that call starts; use call_get to follow it. call_connect also works if the call is already in progress. This tool has not dialed or changed audio."
+                    : "Use call_dial to place the call, or ask the user to start it in Phone. The app connects automatically when the call starts; use call_get to follow it. This tool has not dialed or changed audio.")
                 : "Start or answer the call in Phone, then call_connect. This tool has not dialed or changed audio.")
             : "Use call_get for status. call_end disconnects audio; hang up in Phone separately."
         return value
@@ -276,13 +302,21 @@ import Foundation
                 "instruction": "Answer with session_id and question_id. If user input is needed, ask the user naturally in this task."])
             return "Question queued for delivery to the originating Codex task. Tell the caller you are checking and wait. Do not invent an answer or repeat the question."
         }
+        if name == "end_call" {
+            history?.note(.event, "Assistant hung up", session: sessionID)
+            Task { [weak self] in
+                do { try await self?.bridge?.hangUpAfterSpeech() }
+                catch { self?.history?.note(.event, "Couldn't hang up: " + error.localizedDescription, session: sessionID) }
+            }
+            return "The call is ending now. Don't respond; say nothing further."
+        }
         guard name == "report_call_result", let summary = args["summary"] as? String,
               !summary.isEmpty, summary.count <= 8000 else { throw PhoneSessionError("Unknown tool or invalid call summary.") }
         try registry.update(sessionID) { $0.result = summary }
         history?.reportSummary(summary, session: sessionID)
         history?.note(.event, "Result reported", session: sessionID)
         if !session.resultAttempted { deliver(id: sessionID, name: "call_agent_result", payload: ["status": "result_reported", "summary": summary, "phone_hangup": "not_performed", "transcript_tool": "call_transcript"]) }
-        return "Result queued for delivery to Codex. The phone call has not been hung up."
+        return "Result recorded. Don't read it aloud. If the conversation is over, say a brief goodbye, then use end_call."
     }
     /// Starts the record the first time a prepared session carries audio.
     @discardableResult private func beginHistory(_ id: String) -> Bool {

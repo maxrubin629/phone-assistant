@@ -17,8 +17,11 @@ final class MCPServerTests: XCTestCase {
         let response = server.handle(["jsonrpc": "2.0", "id": 2, "method": "tools/list"])
         let tools = try XCTUnwrap((response?["result"] as? [String: Any])?["tools"] as? [[String: Any]])
         XCTAssertEqual(Set(tools.compactMap { $0["name"] as? String }),
-                       Set(["call_start", "call_get", "call_transcript", "call_connect", "call_set_mode", "call_answer_question", "call_end"]))
-        XCTAssertFalse(tools.contains { ($0["name"] as? String) == "call_dial" })
+                       Set(["call_start", "call_get", "call_transcript", "call_dial", "call_connect", "call_set_mode", "call_answer_question", "call_end"]))
+        // Dialing uses only the prepared session's number, never a new destination.
+        let dial = try XCTUnwrap(tools.first { ($0["name"] as? String) == "call_dial" })
+        let schema = try XCTUnwrap(dial["inputSchema"] as? [String: Any])
+        XCTAssertEqual((schema["properties"] as? [String: Any])?.keys.sorted(), ["session_id"])
     }
 
     func testToolArgumentsForwardExactlyAndAppErrorsBecomeToolErrors() throws {
@@ -43,7 +46,8 @@ final class MCPServerTests: XCTestCase {
         let server = MCPServer { _ in XCTFail("Invalid request reached app"); return [:] }
         ready(server)
         let invalid: [(String, [String: Any])] = [
-            ("call_start", ["task": "Call", "codex_task_id": "origin"]),
+            ("call_start", ["task": "Call"]),
+            ("call_start", ["task": "Call", "codex_task_id": "origin", "dial": "yes"]),
             ("call_start", ["task": " ", "codex_task_id": "origin", "request_id": "r"]),
             ("call_start", ["task": "Call", "codex_task_id": "origin", "request_id": "r", "phone_number": "tel:1;open"]),
             ("call_set_mode", ["session_id": "s", "mode": "anything"]),

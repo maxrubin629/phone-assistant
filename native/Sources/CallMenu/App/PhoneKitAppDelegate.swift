@@ -7,9 +7,15 @@ import CallAutomation
     private var terminating = false
     var notch: CallNotchController?
     var didPrepareControls = false
+    var reopen: (() -> Void)?
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--inspect-call-controls"),
+           CommandLine.arguments.count > index + 1 {
+            CallControlsInspector.write(to: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+            exit(0)
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--check-phone-selection"),
            CommandLine.arguments.count > index + 1 {
             let destination = URL(fileURLWithPath: CommandLine.arguments[index + 1])
@@ -26,6 +32,12 @@ import CallAutomation
         }
         #endif
     }
+    /// Clicking the Dock icon with every window closed shows call history.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows { reopen?() }
+        return false
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         guard let requestStop else { return .terminateNow }

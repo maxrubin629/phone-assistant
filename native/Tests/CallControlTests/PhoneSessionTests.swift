@@ -12,6 +12,13 @@ final class PhoneSessionTests: XCTestCase {
         XCTAssertThrowsError(try registry.create(arguments: changed))
         XCTAssertEqual(registry.current?.originThreadID, first.originThreadID)
     }
+    func testWithoutRequestIDEachStartPreparesANewCall() throws {
+        let registry = PhoneSessionRegistry()
+        var arguments = input; arguments.removeValue(forKey: "request_id")
+        let first = try registry.create(arguments: arguments)
+        try registry.update(first.sessionID) { $0.phase = "ended" }
+        XCTAssertNotEqual(try registry.create(arguments: arguments).sessionID, first.sessionID)
+    }
     func testEndedSessionCannotControlReplacement() throws {
         let registry = PhoneSessionRegistry()
         let old = try registry.create(arguments: input)

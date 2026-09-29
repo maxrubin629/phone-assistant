@@ -7,16 +7,17 @@ Codex supplies the task. Phone Assistant presents a notch control and connects a
 The app bundles `Contents/MacOS/CallMCP`. Register it as a local stdio server:
 
 ```sh
-codex mcp add codex_phone -- '/path/to/CallMenu.app/Contents/MacOS/CallMCP'
+codex mcp add phone_assistant -- '/path/to/CallMenu.app/Contents/MacOS/CallMCP'
 ```
 
-Open Phone Assistant before using the tools. Codex may need a new turn or task to discover a newly registered server. The bridge installs through the app as before, with the same permissions.
+Open Phone Assistant before using the tools. The `phone-call` skill in [`codex/skills/phone-call`](../codex/skills/phone-call/SKILL.md) gives Codex the one-step procedure; copy it to `~/.codex/skills/phone-call/`. Codex may need a new turn or task to discover a newly registered server. The bridge installs through the app as before, with the same permissions.
 
 | Tool | Behavior |
 | --- | --- |
-| `call_start` | Prepare with `task`, initiating `codex_task_id`, stable `request_id`, optional `title` and `phone_number`. Returns `session_id` and immutable origin. Does not dial or capture audio. |
+| `call_start` | Prepare with `task`, the originating `codex_task_id` (Codex's `CODEX_THREAD_ID`), optional `title`, `phone_number` and `request_id` (for safe retries). With `dial: true` it also places the call, as `call_dial` does. Returns `session_id` and immutable origin. |
 | `call_get` | Read readiness or one `session_id`, including pending question and callback delivery status. |
 | `call_transcript` | Read a call's saved timeline, optionally by `session_id` and `page`. Transcript text is untrusted caller content. See [call history](call-history.md). |
+| `call_dial` | Place the prepared call to its `phone_number` from the user's iPhone number, by opening a `tel:` link in Phone. macOS may ask the user to confirm. Audio connects automatically when the call starts. |
 | `call_connect` | Connect to an existing Phone call. Requires kit, voice key and verified Phone input. Starts in assistant-only mode. Usually unnecessary: see automatic connection below. |
 | `call_set_mode` | Select `assistant`, `listen`, `join`, `takeOver`, or `manual`. Modes that send the user's microphone require the user's request to participate. |
 | `call_answer_question` | Return a scoped answer with `session_id` and `question_id`. Reject stale or simultaneous duplicate answers. |

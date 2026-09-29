@@ -60,7 +60,9 @@ public struct CallAudioPacket: Sendable {
     public let sampleRate = 24000
 }
 public enum CallAudioStatus: Equatable, Sendable {
-    case stopped, starting, ready, failed(String)
+    /// `callEnded` means the call itself ended (hung up), which stops audio
+    /// normally rather than as a failure.
+    case stopped, starting, ready, callEnded, failed(String)
 }
 public struct CallAudioMeters: Sendable {
     /// Worker observation time, before UI delivery. Capture/output windows are
@@ -157,6 +159,10 @@ public enum CallAudioAttribution {
         guard !candidates.isEmpty else {
             throw CallAudioError("Start or answer a call in Phone, then connect again.")
         }
+        // A Continuity call's audio runs in avconferenced. Phone itself plays
+        // only its own tones, which overlap the call's first and last second.
+        let conference = candidates.filter { $0.bundleID == "com.apple.avconferenced" }
+        if conference.count == 1, let call = conference.first { return call.id }
         guard candidates.count == 1, let candidate = candidates.first else {
             throw CallAudioError("Phone's audio cannot be isolated right now. Close other calling apps and try again.")
         }

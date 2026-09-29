@@ -44,7 +44,8 @@ public final class PhoneSessionRegistry {
 
     public func create(arguments: [String: Any]) throws -> PhoneSession {
         let origin = try text(arguments, "codex_task_id", maximum: 160)
-        let request = try text(arguments, "request_id", maximum: 160)
+        // Without a request ID, each call_start prepares a new call.
+        let request = try optionalText(arguments, "request_id", maximum: 160) ?? UUID().uuidString
         guard Self.validIdentifier(origin), Self.validIdentifier(request) else {
             throw PhoneSessionError("Use the exact Codex task ID and a stable alphanumeric request ID.")
         }

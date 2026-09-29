@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CallMenuContents: View {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @ObservedObject var chrome: RoutingStore
     @ObservedObject var assistant: AssistantStore
     @ObservedObject var bridge: PhoneBridgeStore
@@ -26,13 +27,17 @@ struct CallMenuContents: View {
         .keyboardShortcut("0", modifiers: [.command, .shift])
 
         Button {
-            openWindow(id: "phone-kit")
-            NSApp.activate(ignoringOtherApps: true)
+            AppWindows.present { openWindow(id: "phone-kit") }
         } label: {
             Label(assistant.preferences.setupCompleted ? "Call History" : "Finish Setup…",
                   systemImage: assistant.preferences.setupCompleted ? "clock.arrow.circlepath" : "checklist")
         }
-        SettingsLink { Label("Settings…", systemImage: "gearshape") }
+        Button {
+            AppWindows.present { openSettings() }
+        } label: {
+            Label("Settings…", systemImage: "gearshape")
+        }
+        .keyboardShortcut(",", modifiers: .command)
 
         if chrome.canStop {
             Button { chrome.stop() } label: {

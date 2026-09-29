@@ -48,6 +48,11 @@ enum PhoneKitOperations {
         let clientRequirement = try requirement("PhoneKitClientRequirement")
         try validateSignature(helper, requirement: helperRequirement)
         try validateSignature(Bundle.main.bundleURL, requirement: clientRequirement)
+        // Checked before asking for a password: macOS refuses the install when this
+        // process no longer matches its bundle, reporting only "CFErrorDomainLaunchd error 4".
+        guard try runningMatchesBundle() else {
+            throw AudioError.message("Phone Assistant was updated while it was open. Quit and reopen it, then try again.")
+        }
         let installedHelper = URL(fileURLWithPath: "/Library/PrivilegedHelperTools/" + helperID)
         let bundledBytes = try Data(contentsOf: helper)
         // Explicit Enable repairs the helper registration as well as its file.
@@ -86,6 +91,15 @@ enum PhoneKitOperations {
             throw AudioError.message("Phone Assistant Audio Bridge's signed build identifier is unavailable.")
         }
         return "cdhash H\"" + hash.map { String(format: "%02x", $0) }.joined() + "\""
+    }
+
+    /// False when a rebuild replaced the bundle after this process launched.
+    private static func runningMatchesBundle() throws -> Bool {
+        var running: SecCode?
+        guard SecCodeCopySelf([], &running) == errSecSuccess, let running else {
+            throw AudioError.message("Phone Assistant's signature could not be read.")
+        }
+        return SecCodeCheckValidity(running, [], nil) != errSecCSStaticCodeChanged
     }
 
     private static func authorizeAndBless() throws {

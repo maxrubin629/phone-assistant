@@ -168,6 +168,9 @@ enum CallNotchPreview {
         var question = live
         question.tone = .attention; question.status = "Your input is needed"; question.level = 0.2
         question.notice = .question("They can do Tuesday at 10:30 or Wednesday at 2. Which works?", deliveryFailed: false)
+        var failure = base
+        failure.title = "No call in progress"; failure.status = "Audio needs attention"; failure.tone = .attention
+        failure.notice = .error("Phone has not activated Phone Assistant as its microphone. Disconnect and reconnect to retry automatic selection.")
         var outline = base
         outline.tone = .idle
         return [
@@ -177,7 +180,9 @@ enum CallNotchPreview {
             Scene(name: "compact-live", expanded: false, model: live),
             Scene(name: "expanded-idle", expanded: true, model: base),
             Scene(name: "expanded-live", expanded: true, model: live),
-            Scene(name: "expanded-question", expanded: true, model: question)
+            Scene(name: "expanded-question", expanded: true, model: question),
+            Scene(name: "compact-error", expanded: false, model: failure),
+            Scene(name: "expanded-error", expanded: true, model: failure)
         ]
     }
 }

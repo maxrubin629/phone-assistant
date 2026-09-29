@@ -22,6 +22,28 @@ final class PhoneTestReportTests: XCTestCase {
         XCTAssertEqual(restored.id, original.id)
         XCTAssertNoThrow(try restored.encoded())
     }
+    func testLongBridgeCallReportStaysWithinLimitAndSaves() throws {
+        var report = PhoneTestReport(nativePlayback: false, microphoneEnabled: true,
+            microphoneGain: 1, callerGain: 1, origin: .phoneBridge)
+        report.setNativePlayback(false)
+        report.event("routing", detail: "Speaker: user; listener: user")
+        report.setLiveTuning(CallAudioTuning(microphoneGain: 1))
+        report.event("devices", detail: "Microphone: MacBook Pro Microphone · Listening: MacBook Pro Speakers")
+        report.event("running")
+        // Three minutes of meter windows, well past the sample limits.
+        for index in 0..<900 {
+            var meters = CallAudioMeters(caller: 0.1, microphone: 0.2, agent: 0.05)
+            meters.renderedPhonePeak = 0.2; meters.renderedPhoneRMS = 0.05; meters.renderedPhoneFrames = 9600
+            meters.phoneReadbackFrames = 9600; meters.phoneReadbackPeak = 0.2; meters.phoneReadbackRMS = 0.05
+            meters.phoneReadbackZeroFrames = UInt64(index % 3 == 0 ? 0 : 10)
+            report.append(meters: meters, muted: false)
+        }
+        XCTAssertLessThanOrEqual(try report.encoded().count, PhoneTestReportStorage.maximumBytes)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try PhoneTestReportStorage.save(report, to: url)
+        XCTAssertEqual(try PhoneTestReportStorage.load(from: url)?.id, report.id)
+    }
     func testBridgeAndAdvancedReportsCannotOverwriteEachOther() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

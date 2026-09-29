@@ -14,23 +14,21 @@ struct CallSettingsView: View {
     var body: some View {
         TabView(selection: $selection) {
             AssistantSettingsView(preferences: $assistant.preferences)
-                .frame(width: 600, height: 470)
                 .tabItem { Label("Assistant", systemImage: "person.crop.circle") }.tag("assistant")
             ConnectionsSettingsView(bridge: bridge)
-                .frame(width: 600, height: 420)
                 .tabItem { Label("Connections", systemImage: "link") }.tag("voice")
             HistorySettingsView(history: history)
-                .frame(width: 600, height: 330)
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }.tag("history")
             PhoneKitSetupView(kit: kit, routingActive: routing.canStop || bridge.canStop)
-                .frame(width: 600, height: 520)
                 .tabItem { Label("Audio", systemImage: "checkmark.shield") }.tag("permissions")
             RoutingView(test: routing, kit: kit, callActive: bridge.canStop,
                         showSetup: { selection = "permissions" },
-                        openLiveControls: { openWindow(id: "live-audio-controls"); NSApp.activate(ignoringOtherApps: true) })
-                .frame(width: 640, height: 640)
+                        openLiveControls: { AppWindows.present { openWindow(id: "live-audio-controls") } })
                 .tabItem { Label("Troubleshooting", systemImage: "stethoscope") }.tag("advanced")
         }
+        // One size for every pane, so switching tabs doesn't resize the window.
+        .frame(width: 640, height: 560)
+        .plainToolbar()
         .onAppear {
             if !["assistant", "voice", "history", "permissions", "advanced"].contains(selection) { selection = "assistant" }
             kit.refresh()
@@ -39,6 +37,20 @@ struct CallSettingsView: View {
         .onDisappear {
             if routing.canStop { routing.stop() }
             kit.cancelAudioCheck()
+        }
+    }
+}
+
+private extension View {
+    /// Keeps the tab bar flush with the window: no gray background or divider
+    /// appears when a pane's content scrolls under it.
+    @ViewBuilder func plainToolbar() -> some View {
+        if #available(macOS 26.0, *) {
+            toolbarBackgroundVisibility(.hidden, for: .windowToolbar).scrollEdgeEffectHidden(true, for: .top)
+        } else if #available(macOS 15.0, *) {
+            toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        } else {
+            self
         }
     }
 }
