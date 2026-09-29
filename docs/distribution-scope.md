@@ -43,7 +43,7 @@ Use **Update Phone Assistant Audio Bridge** when setup reports an available upda
 
 ## Distribution build
 
-Recipients need an Apple Silicon Mac with macOS 14.2 or later. This is an API deployment target, not a claim of qualification across every supported release. Only the packaged `.app` is required on a recipient's Mac; Xcode, source code, and the developer's project directory are unnecessary for local routing.
+Recipients need an Apple Silicon Mac with macOS 26 or later, where Phone places iPhone calls, set to English. The app's deployment target is lower (macOS 14.2), but calls depend on Phone, and only macOS 27 has been qualified. Only the packaged `.app` is required on a recipient's Mac; Xcode, source code, and the developer's project directory are unnecessary for local routing.
 
 Development builds choose one installed Apple Development identity, or an explicitly configured identity. They derive the real Team ID from its certificate. No developer-specific certificate fingerprint or Team ID is hardcoded. The driver has a build-location-independent Mach-O install name. The app bundle contains no project paths or local server configuration.
 
@@ -59,7 +59,7 @@ For an explicitly requested notarization submission, configure an existing `nota
 ./script/package_release.sh --notarize
 ```
 
-The script builds release code, signs the app/helper/driver, archives one app, and optionally submits, staples, verifies Gatekeeper assessment, and rebuilds the archive. It refuses ad-hoc/test or Apple Development signing for distribution. A signed archive alone is not notarization. See [Apple's distribution requirements](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
+The script builds release code, signs the app, helper and driver, and packages the app in `dist/Phone-Assistant.dmg` beside an Applications shortcut, then signs the disk image. With `--notarize` it submits the disk image, staples the ticket to it, and checks it as Gatekeeper will. It refuses ad-hoc/test or Apple Development signing for distribution. A signed disk image alone is not notarization. See [Apple's distribution requirements](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 
 ## Qualification still required
 
@@ -68,6 +68,6 @@ The script builds release code, signs the app/helper/driver, archives one app, a
 - Minimum supported macOS and other supported OS versions.
 - USB/Bluetooth reconnects, long-duration clock drift, sleep/wake, and physical devices at different sample rates.
 - Independent remote listener confirmation of application audio, microphone, intelligibility, mute, isolation, and absence of echo on an actual call.
-- Developer ID Application signing, successful notarization/stapling, and Gatekeeper launch from the distributed archive.
+- Developer ID Application signing, successful notarization/stapling, and Gatekeeper launch from the distributed disk image.
 
 Automated tests and local meters never count as a successful Phone call.

@@ -27,8 +27,8 @@ Caller statements are treated as untrusted information, never as instructions. T
 
 ## Requirements
 
-- An Apple Silicon Mac with macOS 14.2 or later. Speaker-labeled transcripts need macOS 26.
-- A Mac set up to make calls with your iPhone (Continuity) in the Phone app.
+- An Apple Silicon Mac with macOS 26 or later, which has the Phone app, set to English.
+- Calls from your iPhone allowed on this Mac: on the iPhone, Settings → Phone → Calls on Other Devices.
 - Codex, and an OpenAI API key for the voice model.
 - Xcode, and an Apple Development signing identity to build. The app installs a signed audio driver and a privileged helper.
 
